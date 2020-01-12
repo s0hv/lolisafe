@@ -16,6 +16,8 @@ const helmet = require('helmet')
 const bodyParser = require('body-parser')
 const requireUncached = require('require-uncached');
 const CronJob=require('cron').CronJob;
+let encoding
+if(config.allowEncoding) encoding = require('./controllers/encodingController')
 let serv;
 let boot = new Date();
 
@@ -109,7 +111,7 @@ let setupExpress = function(safe, reload = false) {
 	  safe.get('*/:id', async (req, res, next) => {
 		let id = req.params.id
 
-		// Check blacklisted files first
+		// Check whitelisted files first
 		for (let key in config.whitelistedQueries) {
 		  let obj = config.whitelistedQueries[key]
 		  if (id === key) return res.sendFile(path.join(__dirname, obj))
@@ -117,17 +119,32 @@ let setupExpress = function(safe, reload = false) {
 
 		const _path = path.join(__dirname, config.uploads.folder)
 		const host = req.get('host')
+		
+		
+		let skipEncoding = false;
+		const fileExtSeperator = '.';
+		if(id.indexOf(fileExtSeperator) > -1) { // Lets check if the query is for a normally formatted file name
+			let idcheck = id.split(fileExtSeperator);
+			if(idcheck.length === 2) {
+				if(idcheck[0].length > 0 && idcheck[1].length > 0) {
+					skipEncoding = true;
+				}
+			}
+		}
+			
 		// Check encoding
-		if(config.allowEncoding) {
-			const encFile = await db.table('files')
+		if(config.allowEncoding && !skipEncoding) {
+
+			/*const encFile = await db.table('files')
 			  .where(function () { this.where('encodeVersion', '>', 0).andWhereNot('encodedString', '').andWhere('encodedString', id) }).first()
-			if (encFile) id = encFile['name']
+			if (encFile) id = encFile['name']*/
+			let _encodetest = await encoding.decode(id, 0, true);
+			if(typeof(_encodetest) === 'string' && _encodetest.indexOf('.') > 0 && _encodetest.length >= 3) id = _encodetest
 		}
 
 		// Finally handle the actual ID
 		const file = `${_path}/${id}`
 		const ex = fs.existsSync(file)
-
 		// Handle S3
 		let _s3 = false
 		if (!ex) {
